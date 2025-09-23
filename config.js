@@ -1,3 +1,3 @@
-// Toggle da origem do catálogo: 'local' (videos.json) ou 'supabase'
+// 'local' usa videos.json; 'supabase' lê da tabela 'videos'
 window.CATALOG_MODE = 'local'
 window.API_BASE = '/.netlify/functions'
