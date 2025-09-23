@@ -3,27 +3,29 @@
   const grid = document.getElementById('grid')
   const btnLogin = document.getElementById('btnLogin')
   const btnLogout = document.getElementById('btnLogout')
+  const btnDash = document.getElementById('btnDash')
   const who = document.getElementById('who')
   const q = document.getElementById('q')
 
+  // FRONT gating (conveniência). Segurança real está no backend.
+  const ADMIN_EMAIL = 'lucaslopessd@gmail.com'
+
   let catalog = []
-  const players = {} // id -> { player, interval, playing }
-  let ytReady = false
+  const players = {}            // id -> { player, interval, playing, finishedOnce }
+  let ytReady = false           // estado da API do YouTube
 
   // ---- UI de login ----
   function ensureLoginUI(){
     const user = netlifyIdentity.currentUser && netlifyIdentity.currentUser()
-    if(user){
-      btnLogin.classList.add('hide')
-      btnLogout.classList.remove('hide')
-      grid.classList.remove('hide')
-      who.textContent = user.email || ''
-    }else{
-      btnLogin.classList.remove('hide')
-      btnLogout.classList.add('hide')
-      grid.classList.add('hide')
-      who.textContent = ''
-    }
+    const logged = !!user
+    btnLogin.classList.toggle('hide', logged)
+    btnLogout.classList.toggle('hide', !logged)
+    grid.classList.toggle('hide', !logged)
+    who.textContent = logged ? (user.email || '') : ''
+
+    // Mostra o link do dashboard só para o admin (cosmético)
+    const isAdmin = logged && (user.email || '').toLowerCase() === ADMIN_EMAIL.toLowerCase()
+    btnDash && btnDash.classList.toggle('hide', !isAdmin)
   }
   btnLogin.onclick = () => netlifyIdentity.open('login')
   btnLogout.onclick = () => netlifyIdentity.logout()
@@ -36,7 +38,6 @@
 
   // ---- Renderização do catálogo ----
   function cardHtml(v){
-    // sem loading="lazy" para evitar bugs de toque em alguns mobiles
     return `<div class="card" data-title="${(v.title||'').toLowerCase()}">
       <div class="ratio"><iframe id="yt_${v.id}"
         src="https://www.youtube-nocookie.com/embed/${v.id}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1"
@@ -50,10 +51,10 @@
 
   function render(){
     grid.innerHTML = catalog.map(cardHtml).join('')
-    ensurePlayers() // cria/recupera players logo após desenhar a grade
+    ensurePlayers() // cria players depois de desenhar a grid
   }
 
-  // Busca incremental na pesquisa
+  // Pesquisa
   q && q.addEventListener('input', () => {
     const term = q.value.toLowerCase()
     for(const el of grid.children){
@@ -63,29 +64,19 @@
   })
 
   // ---- YouTube Iframe API ----
-  window.onYouTubeIframeAPIReady = () => {
-    ytReady = true
-    ensurePlayers()
-  }
+  window.onYouTubeIframeAPIReady = () => { ytReady = true; ensurePlayers() }
 
   function ensurePlayers(){
-    // Se a API ainda não estiver pronta, tenta novamente
-    if(!ytReady || !window.YT || !YT.Player){
-      setTimeout(ensurePlayers, 250)
-      return
-    }
-    // Garante que cada iframe tenha um player associado
+    if(!ytReady || !window.YT || !YT.Player){ setTimeout(ensurePlayers, 250); return }
     catalog.forEach(v => {
       if (!players[v.id]) {
         const elId = 'yt_' + v.id
         const el = document.getElementById(elId)
         if (!el) return
         try {
-          const player = new YT.Player(elId, {
-            events: { onStateChange: (e) => onStateChange(v, e) }
-          })
-          players[v.id] = { player, interval: null, playing: false }
-        } catch (err) { /* ignora e tenta no próximo tick */ }
+          const player = new YT.Player(elId, { events: { onStateChange: (e) => onStateChange(v, e) }})
+          players[v.id] = { player, interval: null, playing: false, finishedOnce: false }
+        } catch { /* tenta no próximo tick */ }
       }
     })
   }
@@ -100,20 +91,57 @@
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
         body: JSON.stringify({ videoId, seconds })
       })
-    }catch{ /* silencioso */ }
+    }catch{}
+  }
+
+  async function complete(videoId, title){
+    try{
+      const user = netlifyIdentity.currentUser()
+      if(!user) return
+      const token = await user.jwt()
+      await fetch(API + '/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
+        body: JSON.stringify({ videoId, title })
+      })
+    }catch{}
+  }
+
+  function showCongrats(v){
+    // overlay leve e simpático
+    const wrap = document.createElement('div')
+    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999'
+    wrap.innerHTML = `
+      <div style="background:#111827;border:1px solid #1f2937;border-radius:16px;padding:24px;text-align:center;max-width:420px">
+        <div style="font-size:44px;line-height:1">🏆</div>
+        <h3 style="margin:8px 0 4px">Parabéns!</h3>
+        <p style="margin:0 0 12px;color:#94a3b8">Concluiu: <b>${v.title || v.id}</b></p>
+        <button id="ok" style="background:#1f2937;border:1px solid #374151;color:#e5e7eb;padding:10px 14px;border-radius:12px;cursor:pointer">Fechar</button>
+      </div>
+    `;
+    document.body.appendChild(wrap)
+    wrap.querySelector('#ok').onclick = () => document.body.removeChild(wrap)
+    setTimeout(()=>{ if(document.body.contains(wrap)) document.body.removeChild(wrap) }, 7000)
   }
 
   function onStateChange(v, e){
     const s = e.data
     const rec = players[v.id]
     if(!rec) return
+
     if(s === YT.PlayerState.PLAYING && !rec.playing){
       rec.playing = true
-      rec.interval = setInterval(() => ping(v.id, 10), 10000) // ping a cada 10s
+      rec.interval = setInterval(() => ping(v.id, 10), 10000)
     }else if((s === YT.PlayerState.PAUSED || s === YT.PlayerState.ENDED) && rec.playing){
       rec.playing = false
       if(rec.interval){ clearInterval(rec.interval); rec.interval = null }
-      ping(v.id, 1) // flush final
+      ping(v.id, 1)
+    }
+
+    if (s === YT.PlayerState.ENDED && !rec.finishedOnce) {
+      rec.finishedOnce = true
+      showCongrats(v)
+      complete(v.id, v.title)
     }
   }
 
@@ -128,9 +156,7 @@
         catalog = await res.json()
       }
       render()
-    }catch(e){
-      console.error('Falha ao carregar catálogo', e)
-    }
+    }catch(e){ console.error('Falha ao carregar catálogo', e) }
   }
 
   ensureLoginUI()
