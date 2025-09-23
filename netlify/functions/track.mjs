@@ -1,24 +1,31 @@
-import { getClient } from './_supabase.mjs'
-import { getIdentity, requireAuth } from './_auth.mjs'
+import { getSupabase } from './_supabase.mjs';
+import { requireUser } from './_auth.mjs';
 
-export async function handler(event){
-  try{
-    requireAuth(event)
-    if(event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed' }
-    const { sub, email } = getIdentity(event)
-    const body = JSON.parse(event.body || '{}')
-    const seconds = Number(body.seconds || 0)
-    const video_id = String(body.videoId || '')
+export async function handler(event, context) {
+  const [user, unauth] = requireUser(context);
+  if (unauth) return unauth;
 
-    if(!video_id) return { statusCode: 400, body: 'videoId obrigatório' }
-    if(seconds <= 0) return { statusCode: 200, body: 'ignorado' }
+  try {
+    const { videoId, seconds, title } = JSON.parse(event.body || '{}');
+    if (!videoId || seconds == null) {
+      return new Response(JSON.stringify({ error: 'bad_request' }), {
+        status: 400, headers: { 'content-type':'application/json' }
+      });
+    }
 
-    const supabase = getClient()
-    const payload = { user_id: sub, user_email: email, video_id, seconds, ts: new Date().toISOString() }
-    const { error } = await supabase.from('video_events').insert(payload)
-    if(error) throw error
-    return { statusCode: 200, body: JSON.stringify({ok:true}) }
-  }catch(err){
-    return { statusCode: 500, body: String(err) }
+    const supabase = getSupabase();
+    const { error } = await supabase.from('video_events').insert({
+      user_email: user.email,
+      video_id: videoId,
+      video_title: title || null,
+      seconds: Number(seconds) || 0
+    });
+    if (error) throw error;
+
+    return new Response(JSON.stringify({ ok: true }), { headers: { 'content-type':'application/json' }});
+  } catch (e) {
+    return new Response(JSON.stringify({ error: e.message }), {
+      status: 500, headers: { 'content-type':'application/json' }
+    });
   }
 }
