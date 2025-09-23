@@ -32,7 +32,6 @@
     <div class="header">
       <h1>Universidade HS — Aulas</h1>
       <div>
-        <!-- Dashboard só aparece para o admin (front). O backend já bloqueia outros. -->
         <a id="btnDash" class="btn hide" href="/dashboard.html" title="Ver dashboard">📊 Dashboard</a>
         <span id="who" class="user"></span>
         <button id="btnLogin" class="btn">Entrar com Google</button>
@@ -55,35 +54,14 @@
 
   <!-- Netlify Identity -->
   <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
-  <script>
-    // Hardening para mobile/in-app e inicialização explícita do endpoint
-    (function () {
-      const IDENTITY_URL = `${location.origin}/.netlify/identity`;
-      window.IDENTITY_URL = IDENTITY_URL;
 
-      const ua = navigator.userAgent || '';
-      const inApp = /(FBAN|FBAV|Instagram|WhatsApp|Line|Messenger|Snapchat|Twitter)/i.test(ua);
-      if (inApp) { document.getElementById('inapp').style.display = 'block'; }
-
-      function initIdentity() {
-        if (window.netlifyIdentity) {
-          try { window.netlifyIdentity.init({ APIUrl: IDENTITY_URL }); } catch(e) {}
-        }
-      }
-      initIdentity();
-
-      // Re-tentativa caso o widget carregue depois
-      document.addEventListener('readystatechange', () => {
-        if (document.readyState === 'complete') initIdentity();
-      });
-    })();
-  </script>
-
-  <!-- Sua config (CATALOG_MODE etc.) -->
+  <!-- Força catálogo por JSON primeiro (depois pode trocar para 'supabase') -->
   <script src="/config.js"></script>
-  <!-- Lógica do catálogo / tracking / gating -->
+
+  <!-- App -->
   <script src="/app.js"></script>
-  <!-- YouTube API por último -->
+
+  <!-- YouTube Iframe API -->
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 </html>
