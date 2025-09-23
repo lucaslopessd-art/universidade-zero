@@ -1,113 +1,45 @@
-<!doctype html>
-<html lang="pt-br">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dashboard — Universidade HS</title>
-  <style>
-    :root{--bg:#0f172a;--card:#111827;--fg:#e5e7eb;--muted:#94a3b8}
-    *{box-sizing:border-box} body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--fg)}
-    .wrap{max-width:1200px;margin:0 auto;padding:20px}
-    .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px}
-    .btn{display:inline-flex;align-items:center;gap:8px;border:1px solid #1f2937;background:var(--card);padding:10px 14px;border-radius:12px;text-decoration:none;cursor:pointer}
-    table{width:100%;border-collapse:collapse}
-    th,td{padding:10px;border-bottom:1px solid #1f2937;text-align:left}
-    .muted{color:var(--muted)}
-    .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
-    .kpi{background:var(--card);border:1px solid #1f2937;border-radius:16px;padding:12px}
-    .kpi .v{font-weight:800;font-size:22px}
-    .banner{background:#1f2937;border:1px solid #374151;border-radius:12px;padding:10px;margin:8px 0;display:none}
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="header">
-      <h1>Dashboard — Visualizações</h1>
-      <div>
-        <a class="btn" href="/">← Voltar</a>
-      </div>
-    </div>
+// netlify/functions/dashboard.mjs
+import { getSupabase } from './_supabase.mjs';
+import { requireUser, isAdmin } from './_auth.mjs';
 
-    <div id="inapp" class="banner">
-      Para entrar com Google, **abra este link no Safari/Chrome**. Alguns apps (WhatsApp/Instagram) bloqueiam o login.
-    </div>
+export async function handler(event, context) {
+  const [user, unauth] = requireUser(context);
+  if (unauth) return unauth;
 
-    <p class="muted">Faça login. Gestor/Gerente vê todos; demais, apenas os próprios.</p>
+  if (!isAdmin(user)) {
+    return new Response(JSON.stringify({ error: 'forbidden' }), {
+      status: 403, headers: { 'content-type': 'application/json' }
+    });
+  }
 
-    <div class="kpis">
-      <div class="kpi">Tempo total <div id="k_total" class="v">00:00:00</div></div>
-      <div class="kpi">Utilizadores <div id="k_users" class="v">0</div></div>
-      <div class="kpi">Vídeos assistidos <div id="k_videos" class="v">0</div></div>
-    </div>
+  const supabase = getSupabase();
 
-    <table id="tbl">
-      <thead><tr><th>Utilizador</th><th>Vídeo</th><th>Tempo assistido</th><th>Último acesso</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </div>
+  const { data, error } = await supabase
+    .from('video_events')
+    .select('user_email, video_id, video_title, seconds, created_at')
+    .limit(100000);
 
-  <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
-  <script>
-    (function () {
-      const IDENTITY_URL = `${location.origin}/.netlify/identity`;
-      window.IDENTITY_URL = IDENTITY_URL;
+  if (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500, headers: { 'content-type': 'application/json' }
+    });
+  }
 
-      const ua = navigator.userAgent || '';
-      const inApp = /(FBAN|FBAV|Instagram|WhatsApp|Line|Messenger|Snapchat|Twitter)/i.test(ua);
-      if (inApp) { document.getElementById('inapp').style.display = 'block'; }
+  const byKey = {};
+  for (const r of data || []) {
+    const k = `${r.user_email}|${r.video_id}`;
+    const cur = byKey[k] || {
+      user_email: r.user_email,
+      video_id: r.video_id,
+      video_title: r.video_title,
+      seconds: 0,
+      last_seen: r.created_at
+    };
+    cur.seconds += Number(r.seconds || 0);
+    if (r.created_at && (!cur.last_seen || r.created_at > cur.last_seen)) cur.last_seen = r.created_at;
+    byKey[k] = cur;
+  }
 
-      function initIdentity(){
-        if (window.netlifyIdentity) {
-          try { window.netlifyIdentity.init({ APIUrl: IDENTITY_URL }); } catch(e){}
-        }
-      }
-      initIdentity();
-      document.addEventListener('readystatechange', () => {
-        if (document.readyState === 'complete') initIdentity();
-      });
-    })();
-  </script>
-
-  <script>
-    const API = '/.netlify/functions'
-    const tbl = document.querySelector('#tbl tbody')
-    const kTotal = document.getElementById('k_total')
-    const kUsers = document.getElementById('k_users')
-    const kVideos = document.getElementById('k_videos')
-
-    function fmt(sec){
-      sec = Math.round(Number(sec||0));
-      const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
-      return [h,m,s].map(x=>String(x).padStart(2,'0')).join(':')
-    }
-    function render(rows){
-      const total = rows.reduce((s,r)=>s+Number(r.seconds||0),0)
-      const users = new Set(rows.map(r=>r.user_email||'—'))
-      const videos = new Set(rows.map(r=>r.video_id))
-      kTotal.textContent = fmt(total)
-      kUsers.textContent = String(users.size)
-      kVideos.textContent = String(videos.size)
-      tbl.innerHTML = rows.map(r => (
-        `<tr>
-          <td>${r.user_email || '—'}</td>
-          <td>${r.video_title || r.video_id}</td>
-          <td>${fmt(r.seconds)}</td>
-          <td>${r.last_seen ? new Date(r.last_seen).toLocaleString() : '—'}</td>
-        </tr>`
-      )).join('')
-    }
-    async function load(){
-      const user = netlifyIdentity.currentUser()
-      if(!user){ netlifyIdentity.open('login'); return }
-      const token = await user.jwt()
-      const res = await fetch(API + '/dashboard', { headers: { Authorization: 'Bearer '+token }})
-      const data = await res.json().catch(()=>({rows:[]}))
-      render(data.rows || [])
-    }
-    netlifyIdentity.on('login', load)
-    netlifyIdentity.on('init', user => { if(user) load(); })
-    netlifyIdentity.init && netlifyIdentity.init({ APIUrl: window.IDENTITY_URL })
-    load()
-  </script>
-</body>
-</html>
+  const rows = Object.values(byKey).sort((a, b) => (b.last_seen || '').localeCompare(a.last_seen || ''));
+  return new Response(JSON.stringify({ rows }), { headers: { 'content-type': 'application/json' } });
+}
