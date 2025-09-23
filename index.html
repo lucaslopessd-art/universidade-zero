@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Universidade HS — Catálogo</title>
+  <meta name="description" content="Catálogo de aulas com login Google e acompanhamento de visualização.">
+  <style>
+    :root{--bg:#0f172a;--card:#111827;--fg:#e5e7eb;--muted:#94a3b8;--accent:#f59e0b}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--fg)}
+    a{color:inherit}
+    .wrap{max-width:1200px;margin:0 auto;padding:20px}
+    .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    .btn{display:inline-flex;align-items:center;gap:8px;border:1px solid #1f2937;background:var(--card);padding:10px 14px;border-radius:12px;text-decoration:none;cursor:pointer}
+    .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+    .card{background:var(--card);border:1px solid #1f2937;border-radius:16px;padding:12px}
+    .ratio{position:relative;width:100%;padding-top:56.25%}
+    .ratio iframe{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:12px}
+    .title{margin:8px 4px 0;font-size:14px;opacity:.9}
+    .muted{color:var(--muted);font-size:12px;margin-top:4px}
+    .hide{display:none}
+    .search{display:flex;gap:8px;margin:8px 0 16px}
+    input[type="search"]{padding:10px 12px;border-radius:10px;border:1px solid #374151;background:#0b1220;color:var(--fg);flex:1}
+    .user{font-size:12px;opacity:.85}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <h1>Universidade HS — Aulas</h1>
+      <div>
+        <a class="btn" href="/dashboard.html" title="Ver dashboard">📊 Dashboard</a>
+        <span id="who" class="user"></span>
+        <button id="btnLogin" class="btn">Entrar com Google</button>
+        <button id="btnLogout" class="btn hide">Sair</button>
+      </div>
+    </div>
+    <p class="muted">Faça login pelo Google para visualizar e registrar o progresso. Privacidade ativada com youtube-nocookie.</p>
+
+    <div class="search">
+      <input id="q" type="search" placeholder="Procurar aulas..." />
+    </div>
+
+    <div id="grid" class="grid hide"></div>
+  </div>
+
+  <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+</body>
+</html>
