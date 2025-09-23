@@ -7,14 +7,14 @@
   const who = document.getElementById('who')
   const q = document.getElementById('q')
 
-  // FRONT gating (conveniência). Segurança real está no backend.
+  // FRONT gating (cosmético). Segurança real no backend.
   const ADMIN_EMAIL = 'lucaslopessd@gmail.com'
 
   let catalog = []
   const players = {}            // id -> { player, interval, playing, finishedOnce }
-  let ytReady = false           // estado da API do YouTube
+  let ytReady = false
 
-  // ---- UI de login ----
+  // ------------ UI / Login ------------
   function ensureLoginUI(){
     const user = netlifyIdentity.currentUser && netlifyIdentity.currentUser()
     const logged = !!user
@@ -23,7 +23,6 @@
     grid.classList.toggle('hide', !logged)
     who.textContent = logged ? (user.email || '') : ''
 
-    // Mostra o link do dashboard só para o admin (cosmético)
     const isAdmin = logged && (user.email || '').toLowerCase() === ADMIN_EMAIL.toLowerCase()
     btnDash && btnDash.classList.toggle('hide', !isAdmin)
   }
@@ -36,7 +35,7 @@
     netlifyIdentity.on('logout', ensureLoginUI)
   }
 
-  // ---- Renderização do catálogo ----
+  // ------------ Catálogo ------------
   function cardHtml(v){
     return `<div class="card" data-title="${(v.title||'').toLowerCase()}">
       <div class="ratio"><iframe id="yt_${v.id}"
@@ -51,10 +50,9 @@
 
   function render(){
     grid.innerHTML = catalog.map(cardHtml).join('')
-    ensurePlayers() // cria players depois de desenhar a grid
+    ensurePlayers()
   }
 
-  // Pesquisa
   q && q.addEventListener('input', () => {
     const term = q.value.toLowerCase()
     for(const el of grid.children){
@@ -63,7 +61,7 @@
     }
   })
 
-  // ---- YouTube Iframe API ----
+  // ------------ YouTube Iframe API ------------
   window.onYouTubeIframeAPIReady = () => { ytReady = true; ensurePlayers() }
 
   function ensurePlayers(){
@@ -76,11 +74,12 @@
         try {
           const player = new YT.Player(elId, { events: { onStateChange: (e) => onStateChange(v, e) }})
           players[v.id] = { player, interval: null, playing: false, finishedOnce: false }
-        } catch { /* tenta no próximo tick */ }
+        } catch { /* tenta depois */ }
       }
     })
   }
 
+  // ------------ Tracking + conclusão ------------
   async function ping(videoId, seconds){
     try{
       const user = netlifyIdentity.currentUser()
@@ -108,7 +107,6 @@
   }
 
   function showCongrats(v){
-    // overlay leve e simpático
     const wrap = document.createElement('div')
     wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999'
     wrap.innerHTML = `
@@ -124,6 +122,19 @@
     setTimeout(()=>{ if(document.body.contains(wrap)) document.body.removeChild(wrap) }, 7000)
   }
 
+  // Dispara conclusão também por PROGRESSO (≥97%) – robusto em mobile/in-app
+  function checkNearEnd(v, rec){
+    try{
+      const cur = Math.max(0, rec.player.getCurrentTime?.() || 0)
+      const dur = Math.max(1, rec.player.getDuration?.() || 1)
+      if (dur > 0 && cur / dur >= 0.97 && !rec.finishedOnce) {
+        rec.finishedOnce = true
+        showCongrats(v)
+        complete(v.id, v.title)
+      }
+    }catch{}
+  }
+
   function onStateChange(v, e){
     const s = e.data
     const rec = players[v.id]
@@ -131,13 +142,18 @@
 
     if(s === YT.PlayerState.PLAYING && !rec.playing){
       rec.playing = true
-      rec.interval = setInterval(() => ping(v.id, 10), 10000)
+      // a cada 5s: registra tempo e valida conclusão por progresso
+      rec.interval = setInterval(() => {
+        ping(v.id, 5)
+        checkNearEnd(v, rec)
+      }, 5000)
     }else if((s === YT.PlayerState.PAUSED || s === YT.PlayerState.ENDED) && rec.playing){
       rec.playing = false
       if(rec.interval){ clearInterval(rec.interval); rec.interval = null }
       ping(v.id, 1)
     }
 
+    // Redundância: se o evento ENDED vier, garante a conclusão
     if (s === YT.PlayerState.ENDED && !rec.finishedOnce) {
       rec.finishedOnce = true
       showCongrats(v)
@@ -145,7 +161,7 @@
     }
   }
 
-  // ---- Catálogo (JSON local ou Supabase) ----
+  // ------------ Catálogo ------------
   async function loadCatalog(){
     try{
       if(window.CATALOG_MODE === 'supabase'){
