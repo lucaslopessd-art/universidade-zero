@@ -32,7 +32,8 @@
     <div class="header">
       <h1>Universidade HS — Aulas</h1>
       <div>
-        <a class="btn" href="/dashboard.html" title="Ver dashboard">📊 Dashboard</a>
+        <!-- Dashboard só aparece para o admin (front). O backend já bloqueia outros. -->
+        <a id="btnDash" class="btn hide" href="/dashboard.html" title="Ver dashboard">📊 Dashboard</a>
         <span id="who" class="user"></span>
         <button id="btnLogin" class="btn">Entrar com Google</button>
         <button id="btnLogout" class="btn hide">Sair</button>
@@ -40,7 +41,7 @@
     </div>
 
     <div id="inapp" class="banner">
-      Para entrar com Google, **abra este link no Safari/Chrome**. Alguns apps (WhatsApp/Instagram) bloqueiam o login.
+      Para entrar com Google, <b>abra este link no Safari/Chrome</b>. Alguns apps (WhatsApp/Instagram) bloqueiam o login.
     </div>
 
     <p class="muted">Faça login pelo Google para visualizar e registrar o progresso. Privacidade ativada com youtube-nocookie.</p>
@@ -55,7 +56,7 @@
   <!-- Netlify Identity -->
   <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
   <script>
-    // Hardening para mobile/in-app
+    // Hardening para mobile/in-app e inicialização explícita do endpoint
     (function () {
       const IDENTITY_URL = `${location.origin}/.netlify/identity`;
       window.IDENTITY_URL = IDENTITY_URL;
@@ -78,8 +79,11 @@
     })();
   </script>
 
+  <!-- Sua config (CATALOG_MODE etc.) -->
   <script src="/config.js"></script>
+  <!-- Lógica do catálogo / tracking / gating -->
   <script src="/app.js"></script>
+  <!-- YouTube API por último -->
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 </html>
