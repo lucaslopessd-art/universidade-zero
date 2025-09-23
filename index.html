@@ -1,17 +1,18 @@
 <!doctype html>
 <html lang="pt-br">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Universidade HS — Catálogo</title>
   <meta name="description" content="Catálogo de aulas com login Google e acompanhamento de visualização.">
+
   <style>
-    :root{--bg:#0f172a;--card:#111827;--fg:#e5e7eb;--muted:#94a3b8;--accent:#f59e0b}
+    :root{--bg:#0f172a;--card:#111827;--fg:#e5e7eb;--muted:#94a3b8}
     *{box-sizing:border-box}
     body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--fg)}
     a{color:inherit}
     .wrap{max-width:1200px;margin:0 auto;padding:20px}
-    .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap}
     .btn{display:inline-flex;align-items:center;gap:8px;border:1px solid #1f2937;background:var(--card);padding:10px 14px;border-radius:12px;text-decoration:none;cursor:pointer}
     .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
     .card{background:var(--card);border:1px solid #1f2937;border-radius:16px;padding:12px}
@@ -23,6 +24,7 @@
     .search{display:flex;gap:8px;margin:8px 0 16px}
     input[type="search"]{padding:10px 12px;border-radius:10px;border:1px solid #374151;background:#0b1220;color:var(--fg);flex:1}
     .user{font-size:12px;opacity:.85}
+    .banner{background:#1f2937;border:1px solid #374151;border-radius:12px;padding:10px;margin:8px 0;display:none}
   </style>
 </head>
 <body>
@@ -36,6 +38,11 @@
         <button id="btnLogout" class="btn hide">Sair</button>
       </div>
     </div>
+
+    <div id="inapp" class="banner">
+      Para entrar com Google, **abra este link no Safari/Chrome**. Alguns apps (WhatsApp/Instagram) bloqueiam o login.
+    </div>
+
     <p class="muted">Faça login pelo Google para visualizar e registrar o progresso. Privacidade ativada com youtube-nocookie.</p>
 
     <div class="search">
@@ -45,9 +52,34 @@
     <div id="grid" class="grid hide"></div>
   </div>
 
+  <!-- Netlify Identity -->
   <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script>
+    // Hardening para mobile/in-app
+    (function () {
+      const IDENTITY_URL = `${location.origin}/.netlify/identity`;
+      window.IDENTITY_URL = IDENTITY_URL;
+
+      const ua = navigator.userAgent || '';
+      const inApp = /(FBAN|FBAV|Instagram|WhatsApp|Line|Messenger|Snapchat|Twitter)/i.test(ua);
+      if (inApp) { document.getElementById('inapp').style.display = 'block'; }
+
+      function initIdentity() {
+        if (window.netlifyIdentity) {
+          try { window.netlifyIdentity.init({ APIUrl: IDENTITY_URL }); } catch(e) {}
+        }
+      }
+      initIdentity();
+
+      // Re-tentativa caso o widget carregue depois
+      document.addEventListener('readystatechange', () => {
+        if (document.readyState === 'complete') initIdentity();
+      });
+    })();
+  </script>
+
+  <script src="/config.js"></script>
+  <script src="/app.js"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 </html>
