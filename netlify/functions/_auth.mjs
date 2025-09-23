@@ -1,4 +1,3 @@
-// netlify/functions/_auth.mjs
 export function getUser(context) {
   return context.clientContext?.user || null;
 }
