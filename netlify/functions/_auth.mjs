@@ -1,12 +1,21 @@
-export function getIdentity(event){
-  const cc = event.clientContext || {}
-  const user = cc.user || null
-  const roles = (user && user.app_metadata && user.app_metadata.roles) ? user.app_metadata.roles : []
-  const sub = user ? user.sub : null
-  const email = user ? (user.email || (user.user_metadata && user.user_metadata.email) || null) : null
-  return { user, roles, sub, email }
+// Autenticação + Autorização centralizadas
+export function getUser(context) {
+  return context.clientContext?.user || null;
 }
-export function requireAuth(event){
-  const { user } = getIdentity(event)
-  if(!user) throw new Error('Não autenticado. Ative Netlify Identity e login via Google.')
+
+export function requireUser(context) {
+  const user = getUser(context);
+  if (!user) {
+    return [null, new Response(JSON.stringify({ error: 'unauthorized' }), {
+      status: 401, headers: { 'content-type': 'application/json' }
+    })];
+  }
+  return [user, null];
+}
+
+export function isAdmin(user) {
+  const adminEmail = (process.env.ADMIN_EMAIL || '').toLowerCase();
+  const email = (user?.email || '').toLowerCase();
+  const roles = user?.app_metadata?.roles || [];
+  return email === adminEmail || roles.includes('gestor') || roles.includes('gerente');
 }
