@@ -1,5 +1,5 @@
 (() => {
-  const API = window.API_BASE
+  const API = '/.netlify/functions'
   const grid = document.getElementById('grid')
   const btnLogin = document.getElementById('btnLogin')
   const btnLogout = document.getElementById('btnLogout')
@@ -9,7 +9,7 @@
   let players = {} // id -> {player, interval, playing}
 
   function ensureLoginUI(){
-    const user = netlifyIdentity.currentUser()
+    const user = netlifyIdentity.currentUser && netlifyIdentity.currentUser()
     if(user){
       btnLogin.classList.add('hide')
       btnLogout.classList.remove('hide')
@@ -25,9 +25,12 @@
 
   btnLogin.onclick = () => netlifyIdentity.open('login')
   btnLogout.onclick = () => netlifyIdentity.logout()
-  netlifyIdentity.on('login', ensureLoginUI)
-  netlifyIdentity.on('logout', ensureLoginUI)
-  netlifyIdentity.init()
+  if (window.netlifyIdentity) {
+    try { window.netlifyIdentity.init({ APIUrl: window.IDENTITY_URL || `${location.origin}/.netlify/identity` }); } catch(e){}
+    netlifyIdentity.on('init', ensureLoginUI)
+    netlifyIdentity.on('login', ensureLoginUI)
+    netlifyIdentity.on('logout', ensureLoginUI)
+  }
 
   function cardHtml(v){
     return `<div class="card" data-title="${(v.title||'').toLowerCase()}">
@@ -45,8 +48,7 @@
     grid.innerHTML = catalog.map(cardHtml).join('')
   }
 
-  // Search filter
-  q.addEventListener('input', () => {
+  q && q.addEventListener('input', () => {
     const term = q.value.toLowerCase()
     for(const el of grid.children){
       const t = el.getAttribute('data-title') || ''
@@ -54,13 +56,12 @@
     }
   })
 
-  // YouTube API ready callback
+  // YouTube API ready
   window.onYouTubeIframeAPIReady = () => {
     catalog.forEach(v => {
       const p = new YT.Player('yt_'+v.id, {
         events: {
-          'onStateChange': (e) => onStateChange(v, e),
-          'onReady': () => {}
+          'onStateChange': (e) => onStateChange(v, e)
         }
       })
       players[v.id] = { player: p, interval: null, playing: false }
@@ -77,7 +78,7 @@
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
         body: JSON.stringify({ videoId, seconds })
       })
-    }catch(err){ /* silencioso */ }
+    }catch(err){ /* silent */ }
   }
 
   function onStateChange(v, e){
@@ -94,16 +95,19 @@
     }
   }
 
-  // Load catalog
   async function loadCatalog(){
-    if(window.CATALOG_MODE === 'supabase'){
-      const res = await fetch(API + '/catalog').catch(()=>null)
-      catalog = res ? await res.json() : []
-    }else{
-      const res = await fetch('/videos.json')
-      catalog = await res.json()
+    try{
+      if(window.CATALOG_MODE === 'supabase'){
+        const res = await fetch(API + '/catalog')
+        catalog = await res.json()
+      }else{
+        const res = await fetch('/videos.json', { cache: 'no-store' })
+        catalog = await res.json()
+      }
+      render()
+    }catch(e){
+      console.error('Falha ao carregar catálogo', e)
     }
-    render()
   }
 
   ensureLoginUI()
