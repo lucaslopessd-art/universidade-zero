@@ -1,3 +1,4 @@
+// netlify/functions/_supabase.mjs
 import { createClient } from '@supabase/supabase-js';
 
 export function getSupabase() {
