@@ -2,90 +2,66 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dashboard — Universidade HS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Universidade HS — Dashboard</title>
   <style>
     :root{--bg:#0f172a;--card:#111827;--fg:#e5e7eb;--muted:#94a3b8}
-    *{box-sizing:border-box} body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--fg)}
-    .wrap{max-width:1200px;margin:0 auto;padding:20px}
-    .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
-    .btn{display:inline-flex;align-items:center;gap:8px;border:1px solid #1f2937;background:var(--card);padding:10px 14px;border-radius:12px;text-decoration:none;cursor:pointer}
+    body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--fg)}
+    .wrap{max-width:1100px;margin:0 auto;padding:20px}
+    .card{background:var(--card);border:1px solid #1f2937;border-radius:16px;padding:16px;margin:12px 0}
     table{width:100%;border-collapse:collapse}
-    th,td{padding:10px;border-bottom:1px solid #1f2937;text-align:left}
+    th,td{padding:8px 10px;border-bottom:1px solid #1f2937;text-align:left;font-size:14px}
     .muted{color:var(--muted)}
-    .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
-    .kpi{background:var(--card);border:1px solid #1f2937;border-radius:16px;padding:12px}
-    .kpi .v{font-weight:800;font-size:22px}
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="header">
-      <h1>Dashboard — Visualizações</h1>
-      <div>
-        <a class="btn" href="/">← Voltar</a>
-      </div>
+    <h1>Dashboard</h1>
+    <p class="muted">Somente administradores.</p>
+    <div id="msg" class="card">Validando acesso…</div>
+    <div id="pane" class="card" style="display:none">
+      <table id="t"><thead>
+        <tr><th>Usuário</th><th>Vídeo</th><th>Tempo (s)</th><th>Último acesso</th></tr>
+      </thead><tbody></tbody></table>
     </div>
-    <p class="muted">Faça login. Gestor/Gerente vê todos; demais, apenas seus dados.</p>
-
-    <div class="kpis">
-      <div class="kpi">Tempo total <div id="k_total" class="v">00:00:00</div></div>
-      <div class="kpi">Utilizadores <div id="k_users" class="v">0</div></div>
-      <div class="kpi">Vídeos assistidos <div id="k_videos" class="v">0</div></div>
-    </div>
-
-    <table id="tbl">
-      <thead><tr><th>Utilizador</th><th>Vídeo</th><th>Tempo assistido</th><th>Último acesso</th></tr></thead>
-      <tbody></tbody>
-    </table>
   </div>
 
   <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
   <script>
-  const API = '/.netlify/functions'
-  const tbl = document.querySelector('#tbl tbody')
-  const kTotal = document.getElementById('k_total')
-  const kUsers = document.getElementById('k_users')
-  const kVideos = document.getElementById('k_videos')
+    async function main(){
+      const IDENTITY_URL = `${location.origin}/.netlify/identity`;
+      window.netlifyIdentity?.init({ APIUrl: IDENTITY_URL });
+      const user = await new Promise(r=>{
+        const u = window.netlifyIdentity?.currentUser?.();
+        if(u) return r(u);
+        window.netlifyIdentity?.on?.('init', r);
+      });
 
-  function fmt(sec){
-    sec = Math.round(Number(sec||0));
-    const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
-    return [h,m,s].map(x=>String(x).padStart(2,'0')).join(':')
-  }
+      if(!user){ document.getElementById('msg').textContent = 'Faça login para continuar.'; return; }
 
-  function render(rows){
-    // KPIs
-    const total = rows.reduce((s,r)=>s+Number(r.seconds||0),0)
-    const users = new Set(rows.map(r=>r.user_email||'—'))
-    const videos = new Set(rows.map(r=>r.video_id))
-    kTotal.textContent = fmt(total)
-    kUsers.textContent = String(users.size)
-    kVideos.textContent = String(videos.size)
+      const token = await user.jwt();
+      const res = await fetch('/.netlify/functions/dashboard', {
+        headers: { Authorization: 'Bearer ' + token }
+      });
 
-    // tabela
-    tbl.innerHTML = rows.map(r => {
-      return `<tr>
-        <td>${r.user_email || '—'}</td>
-        <td>${r.video_title || r.video_id}</td>
-        <td>${fmt(r.seconds)}</td>
-        <td>${r.last_seen ? new Date(r.last_seen).toLocaleString() : '—'}</td>
-      </tr>`
-    }).join('')
-  }
+      if(res.status === 403){ document.getElementById('msg').textContent = 'Acesso negado.'; return; }
+      if(!res.ok){ document.getElementById('msg').textContent = 'Erro ao carregar.'; return; }
 
-  async function load(){
-    const user = netlifyIdentity.currentUser()
-    if(!user){ netlifyIdentity.open('login'); return }
-    const token = await user.jwt()
-    const res = await fetch(API + '/dashboard', { headers: { Authorization: 'Bearer '+token }})
-    const data = await res.json().catch(()=>({rows:[]}))
-    render(data.rows || [])
-  }
+      const data = await res.json();
+      document.getElementById('msg').style.display='none';
+      const pane = document.getElementById('pane'); pane.style.display='block';
 
-  netlifyIdentity.on('login', load)
-  netlifyIdentity.init()
-  load()
+      const tbody = document.querySelector('#t tbody');
+      tbody.innerHTML = (data.rows||[]).map(r => `
+        <tr>
+          <td>${r.user_email}</td>
+          <td>${r.video_title || r.video_id}</td>
+          <td>${Math.round(r.seconds||0)}</td>
+          <td>${r.last_seen ? new Date(r.last_seen).toLocaleString() : '-'}</td>
+        </tr>
+      `).join('');
+    }
+    main();
   </script>
 </body>
 </html>
