@@ -7,20 +7,25 @@
   const who = document.getElementById('who')
   const q = document.getElementById('q')
 
-  // Somente cosmético; segurança real no backend
   const ADMIN_EMAIL = 'lucaslopessd@gmail.com'
-
-  // >>> Novos parâmetros de robustez
-  const PROGRESS_THRESHOLD = 0.95   // 95% já conta como concluído
-  const AUDIT_MS = 1000             // auditor global a cada 1s
-  const PING_MS = 5000              // envio de progresso p/ backend
+  const PROGRESS_THRESHOLD = 0.95
+  const AUDIT_MS = 1000
+  const PING_MS = 5000
 
   let catalog = []
-  const videoById = new Map()       // id -> {id, title}
-  const players = {}                // id -> { player, interval, playing, finishedOnce }
+  const videoById = new Map()
+  const players = {}
   let ytReady = false
 
-  // ------------ UI / Login ------------
+  // -------- util ----------
+  const norm = s => (s || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .trim()
+
+  // -------- login/ui ----------
   function ensureLoginUI(){
     const user = netlifyIdentity.currentUser && netlifyIdentity.currentUser()
     const logged = !!user
@@ -40,9 +45,10 @@
     netlifyIdentity.on('logout', ensureLoginUI)
   }
 
-  // ------------ Catálogo ------------
+  // -------- render ----------
   function cardHtml(v){
-    return `<div class="card" data-title="${(v.title||'').toLowerCase()}">
+    const keys = norm(`${v.title||''} ${v.id||''}`)
+    return `<div class="card" data-keys="${keys}">
       <div class="ratio"><iframe id="yt_${v.id}"
         src="https://www.youtube-nocookie.com/embed/${v.id}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1"
         title="${v.title||v.id}"
@@ -52,23 +58,24 @@
       <div class="muted"><a href="https://youtu.be/${v.id}" target="_blank" rel="noreferrer">Abrir no YouTube</a></div>
     </div>`
   }
-
   function render(){
     grid.innerHTML = catalog.map(cardHtml).join('')
     ensurePlayers()
   }
 
-  q && q.addEventListener('input', () => {
-    const term = q.value.toLowerCase()
-    for(const el of grid.children){
-      const t = el.getAttribute('data-title') || ''
-      el.style.display = t.includes(term) ? '' : 'none'
+  // -------- busca robusta ----------
+  function applyFilter(){
+    const term = norm(q?.value || '')
+    if (!term) { for (const el of grid.children) el.style.display = ''; return }
+    for (const el of grid.children){
+      const keys = el.getAttribute('data-keys') || ''
+      el.style.display = keys.includes(term) ? '' : 'none'
     }
-  })
+  }
+  q && ['input','keyup','change'].forEach(ev => q.addEventListener(ev, applyFilter))
 
-  // ------------ YouTube Iframe API ------------
+  // -------- YT API ----------
   window.onYouTubeIframeAPIReady = () => { ytReady = true; ensurePlayers() }
-
   function ensurePlayers(){
     if(!ytReady || !window.YT || !YT.Player){ setTimeout(ensurePlayers, 250); return }
     catalog.forEach(v => {
@@ -79,16 +86,15 @@
         try {
           const player = new YT.Player(elId, { events: { onStateChange: (e) => onStateChange(v, e) }})
           players[v.id] = { player, interval: null, playing: false, finishedOnce: false }
-        } catch { /* tenta depois */ }
+        } catch {}
       }
     })
   }
 
-  // ------------ Tracking + conclusão ------------
+  // -------- tracking + gamificação ----------
   async function ping(videoId, seconds){
     try{
-      const user = netlifyIdentity.currentUser()
-      if(!user) return
+      const user = netlifyIdentity.currentUser(); if(!user) return
       const token = await user.jwt()
       await fetch(API + '/track', {
         method: 'POST',
@@ -97,11 +103,9 @@
       })
     }catch{}
   }
-
   async function complete(videoId, title){
     try{
-      const user = netlifyIdentity.currentUser()
-      if(!user) return
+      const user = netlifyIdentity.currentUser(); if(!user) return
       const token = await user.jwt()
       await fetch(API + '/complete', {
         method: 'POST',
@@ -110,7 +114,6 @@
       })
     }catch{}
   }
-
   function showCongrats(v){
     const wrap = document.createElement('div')
     wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999'
@@ -126,7 +129,6 @@
     wrap.querySelector('#ok').onclick = () => document.body.removeChild(wrap)
     setTimeout(()=>{ if(document.body.contains(wrap)) document.body.removeChild(wrap) }, 7000)
   }
-
   function checkNearEnd(v, rec){
     if (!rec || !rec.player || rec.finishedOnce) return
     try{
@@ -139,29 +141,19 @@
       }
     }catch{}
   }
-
   function onStateChange(v, e){
     const s = e.data
-    const rec = players[v.id]
-    if(!rec) return
-
+    const rec = players[v.id]; if(!rec) return
     if(s === YT.PlayerState.PLAYING && !rec.playing){
       rec.playing = true
-      rec.interval = setInterval(() => {
-        ping(v.id, Math.round(PING_MS/1000))
-        checkNearEnd(v, rec)            // checa durante a reprodução
-      }, PING_MS)
+      rec.interval = setInterval(() => { ping(v.id, Math.round(PING_MS/1000)); checkNearEnd(v, rec) }, PING_MS)
     }else if((s === YT.PlayerState.PAUSED || s === YT.PlayerState.ENDED) && rec.playing){
       rec.playing = false
       if(rec.interval){ clearInterval(rec.interval); rec.interval = null }
       ping(v.id, 1)
     }
-
-    // Redundância: quando o ENDED vier, garante
     if (s === YT.PlayerState.ENDED) checkNearEnd(v, rec)
   }
-
-  // >>> Auditor global 1s: detecta conclusão mesmo se a pessoa só arrastar pro fim
   setInterval(() => {
     for (const id in players) {
       const rec = players[id]
@@ -171,7 +163,7 @@
     }
   }, AUDIT_MS)
 
-  // ------------ Catálogo ------------
+  // -------- catálogo ----------
   async function loadCatalog(){
     try{
       if(window.CATALOG_MODE === 'supabase'){
@@ -184,6 +176,7 @@
       videoById.clear()
       catalog.forEach(v => videoById.set(v.id, v))
       render()
+      applyFilter() // aplica filtro se já havia termo digitado
     }catch(e){ console.error('Falha ao carregar catálogo', e) }
   }
 
