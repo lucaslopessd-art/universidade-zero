@@ -1,13 +1,11 @@
 {
-  "name": "universidade-zero",
+  "name": "universidade-hs",
   "private": true,
   "version": "1.0.0",
-  "type": "module",
   "scripts": {
-    "build": "echo 'static site - nothing to build'",
-    "postinstall": "echo 'deps installed for Netlify Functions'"
+    "build": "echo no-build"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.4"
+    "@supabase/supabase-js": "^2.45.0"
   }
 }
