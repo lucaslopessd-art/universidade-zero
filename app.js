@@ -7,11 +7,17 @@
   const who = document.getElementById('who')
   const q = document.getElementById('q')
 
-  // FRONT gating (cosmético). Segurança real no backend.
+  // Somente cosmético; segurança real no backend
   const ADMIN_EMAIL = 'lucaslopessd@gmail.com'
 
+  // >>> Novos parâmetros de robustez
+  const PROGRESS_THRESHOLD = 0.95   // 95% já conta como concluído
+  const AUDIT_MS = 1000             // auditor global a cada 1s
+  const PING_MS = 5000              // envio de progresso p/ backend
+
   let catalog = []
-  const players = {}            // id -> { player, interval, playing, finishedOnce }
+  const videoById = new Map()       // id -> {id, title}
+  const players = {}                // id -> { player, interval, playing, finishedOnce }
   let ytReady = false
 
   // ------------ UI / Login ------------
@@ -22,7 +28,6 @@
     btnLogout.classList.toggle('hide', !logged)
     grid.classList.toggle('hide', !logged)
     who.textContent = logged ? (user.email || '') : ''
-
     const isAdmin = logged && (user.email || '').toLowerCase() === ADMIN_EMAIL.toLowerCase()
     btnDash && btnDash.classList.toggle('hide', !isAdmin)
   }
@@ -122,12 +127,12 @@
     setTimeout(()=>{ if(document.body.contains(wrap)) document.body.removeChild(wrap) }, 7000)
   }
 
-  // Dispara conclusão também por PROGRESSO (≥97%) – robusto em mobile/in-app
   function checkNearEnd(v, rec){
+    if (!rec || !rec.player || rec.finishedOnce) return
     try{
       const cur = Math.max(0, rec.player.getCurrentTime?.() || 0)
       const dur = Math.max(1, rec.player.getDuration?.() || 1)
-      if (dur > 0 && cur / dur >= 0.97 && !rec.finishedOnce) {
+      if (dur > 0 && cur / dur >= PROGRESS_THRESHOLD) {
         rec.finishedOnce = true
         showCongrats(v)
         complete(v.id, v.title)
@@ -142,24 +147,29 @@
 
     if(s === YT.PlayerState.PLAYING && !rec.playing){
       rec.playing = true
-      // a cada 5s: registra tempo e valida conclusão por progresso
       rec.interval = setInterval(() => {
-        ping(v.id, 5)
-        checkNearEnd(v, rec)
-      }, 5000)
+        ping(v.id, Math.round(PING_MS/1000))
+        checkNearEnd(v, rec)            // checa durante a reprodução
+      }, PING_MS)
     }else if((s === YT.PlayerState.PAUSED || s === YT.PlayerState.ENDED) && rec.playing){
       rec.playing = false
       if(rec.interval){ clearInterval(rec.interval); rec.interval = null }
       ping(v.id, 1)
     }
 
-    // Redundância: se o evento ENDED vier, garante a conclusão
-    if (s === YT.PlayerState.ENDED && !rec.finishedOnce) {
-      rec.finishedOnce = true
-      showCongrats(v)
-      complete(v.id, v.title)
-    }
+    // Redundância: quando o ENDED vier, garante
+    if (s === YT.PlayerState.ENDED) checkNearEnd(v, rec)
   }
+
+  // >>> Auditor global 1s: detecta conclusão mesmo se a pessoa só arrastar pro fim
+  setInterval(() => {
+    for (const id in players) {
+      const rec = players[id]
+      const v = videoById.get(id)
+      if (!v) continue
+      checkNearEnd(v, rec)
+    }
+  }, AUDIT_MS)
 
   // ------------ Catálogo ------------
   async function loadCatalog(){
@@ -171,6 +181,8 @@
         const res = await fetch('/videos.json', { cache: 'no-store' })
         catalog = await res.json()
       }
+      videoById.clear()
+      catalog.forEach(v => videoById.set(v.id, v))
       render()
     }catch(e){ console.error('Falha ao carregar catálogo', e) }
   }
