@@ -1,44 +1,55 @@
-import { getSupabase } from './_supabase.mjs';
-import { requireUser, isAdmin } from './_auth.mjs';
+// netlify/functions/dashboard.mjs
+import { getStore } from "@netlify/blobs";
 
-export async function handler(event, context) {
-  const [user, unauth] = requireUser(context);
-  if (unauth) return unauth;
-  if (!isAdmin(user)) {
-    return new Response(JSON.stringify({ error: 'forbidden' }), {
-      status: 403, headers: { 'content-type': 'application/json' }
-    });
-  }
+const FALLBACK_ADMIN = "lucaslopessd@gmail.com";
+const ADMINS = (process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || FALLBACK_ADMIN)
+  .toLowerCase()
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
+export default async (req, context) => {
   try {
-    const supabase = getSupabase();
-    const { data, error } = await supabase
-      .from('video_events')
-      .select('user_email, video_id, video_title, seconds, created_at')
-      .limit(100000);
+    const authedEmail =
+      context.clientContext?.user?.email?.toLowerCase() ||
+      req.headers.get("x-user-email")?.toLowerCase() ||
+      "";
 
-    if (error) throw error;
-
-    const byKey = {};
-    for (const r of data || []) {
-      const k = `${r.user_email}|${r.video_id}`;
-      const cur = byKey[k] || {
-        user_email: r.user_email,
-        video_id: r.video_id,
-        video_title: r.video_title,
-        seconds: 0,
-        last_seen: r.created_at
-      };
-      cur.seconds += Number(r.seconds || 0);
-      if (r.created_at && (!cur.last_seen || r.created_at > cur.last_seen)) cur.last_seen = r.created_at;
-      byKey[k] = cur;
+    if (!ADMINS.includes(authedEmail)) {
+      return new Response(JSON.stringify({ error: "not_admin" }), {
+        status: 403,
+        headers: { "content-type": "application/json" }
+      });
     }
-    return new Response(JSON.stringify({ rows: Object.values(byKey) }), {
-      headers: { 'content-type': 'application/json' }
+
+    const store = getStore("progress");
+
+    const users = {};
+    let cursor;
+    do {
+      const { blobs, cursor: next } = await store.list({ prefix: "done:", cursor, limit: 1000 });
+      for (const b of blobs) {
+        const email = b.key.split(":")[1];
+        const doneMap = (await store.getJSON(b.key)) || {};
+        const vids = Object.keys(doneMap);
+        if (!users[email]) users[email] = { email, completed: 0, videos: [] };
+        users[email].completed += vids.length;
+        users[email].videos.push(...vids);
+      }
+      cursor = next;
+    } while (cursor);
+
+    const totalUsers = Object.keys(users).length;
+    const totalViews = Object.values(users).reduce((sum, u) => sum + u.completed, 0);
+    const ranking = Object.values(users).sort((a, b) => b.completed - a.completed).slice(0, 20);
+
+    return new Response(JSON.stringify({ totalUsers, totalViews, ranking, users }), {
+      headers: { "content-type": "application/json" }
     });
   } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }), {
-      status: 500, headers: { 'content-type': 'application/json' }
+    return new Response(JSON.stringify({ error: String(e) }), {
+      status: 500,
+      headers: { "content-type": "application/json" }
     });
   }
-}
+};
