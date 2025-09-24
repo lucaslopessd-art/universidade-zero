@@ -58,3 +58,8 @@ const ADMIN_EMAILS = ['lucaslopessd@gmail.com']; // <= adicione mais se quiser
   window.Auth = { user, isAdmin, render };
 })();
 </script>
+<script>
+  // Força os dois botões a ficarem brancos
+  document.getElementById('btnLogin')?.classList.add('btn--white');
+  document.getElementById('btnLogout')?.classList.add('btn--white');
+</script>
