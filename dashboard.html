@@ -1,66 +1,101 @@
 <!doctype html>
 <html lang="pt-br">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Universidade HS — Dashboard</title>
   <style>
     :root{--bg:#0f172a;--card:#111827;--fg:#e5e7eb;--muted:#94a3b8}
+    *{box-sizing:border-box}
     body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--fg)}
     .wrap{max-width:1100px;margin:0 auto;padding:20px}
     .card{background:var(--card);border:1px solid #1f2937;border-radius:16px;padding:16px;margin:12px 0}
-    table{width:100%;border-collapse:collapse}
-    th,td{padding:8px 10px;border-bottom:1px solid #1f2937;text-align:left;font-size:14px}
     .muted{color:var(--muted)}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px;border-bottom:1px solid #1f2937;text-align:left;font-size:14px}
+    .kpis{display:flex;gap:12px;flex-wrap:wrap}
+    .kpi{background:#0b1220;border:1px solid #1f2937;border-radius:12px;padding:14px;min-width:180px}
+    .kpi b{font-size:20px;display:block;margin-top:6px}
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>Dashboard</h1>
     <p class="muted">Somente administradores.</p>
+
     <div id="msg" class="card">Validando acesso…</div>
+
     <div id="pane" class="card" style="display:none">
-      <table id="t"><thead>
-        <tr><th>Usuário</th><th>Vídeo</th><th>Tempo (s)</th><th>Último acesso</th></tr>
-      </thead><tbody></tbody></table>
+      <div class="kpis">
+        <div class="kpi"><span>Usuários com progresso</span><b id="kUsers">-</b></div>
+        <div class="kpi"><span>Total de aulas concluídas</span><b id="kViews">-</b></div>
+      </div>
+    </div>
+
+    <div id="rankCard" class="card" style="display:none">
+      <h3>Ranking (top 50)</h3>
+      <table id="rank">
+        <thead>
+          <tr><th>#</th><th>Usuário</th><th>Concluídas</th><th>Vídeos</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
   </div>
 
+  <!-- Netlify Identity -->
   <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
   <script>
-    async function main(){
-      const IDENTITY_URL = `${location.origin}/.netlify/identity`;
-      window.netlifyIdentity?.init({ APIUrl: IDENTITY_URL });
-      const user = await new Promise(r=>{
-        const u = window.netlifyIdentity?.currentUser?.();
-        if(u) return r(u);
-        window.netlifyIdentity?.on?.('init', r);
+    async function getCurrentUser(){
+      const id = window.netlifyIdentity;
+      id?.init({ APIUrl: `${location.origin}/.netlify/identity` });
+
+      return new Promise((resolve)=>{
+        const u = id?.currentUser?.();
+        if (u) return resolve(u);
+        id?.on?.("init", user => resolve(user));
+        id?.on?.("login", user => resolve(user));
       });
+    }
 
-      if(!user){ document.getElementById('msg').textContent = 'Faça login para continuar.'; return; }
+    async function main(){
+      const msg = document.getElementById('msg');
 
+      const user = await getCurrentUser();
+      if (!user) { msg.textContent = "Faça login para continuar."; return; }
+
+      // Envia o token no Authorization (Netlify vai popular context.clientContext.user)
       const token = await user.jwt();
+
       const res = await fetch('/.netlify/functions/dashboard', {
         headers: { Authorization: 'Bearer ' + token }
       });
 
-      if(res.status === 403){ document.getElementById('msg').textContent = 'Acesso negado.'; return; }
-      if(!res.ok){ document.getElementById('msg').textContent = 'Erro ao carregar.'; return; }
+      if (res.status === 401) { msg.textContent = "Faça login para continuar."; return; }
+      if (res.status === 403) { msg.textContent = "Acesso negado."; return; }
+      if (!res.ok) { msg.textContent = "Erro ao carregar."; return; }
 
       const data = await res.json();
-      document.getElementById('msg').style.display='none';
-      const pane = document.getElementById('pane'); pane.style.display='block';
+      msg.style.display = 'none';
 
-      const tbody = document.querySelector('#t tbody');
-      tbody.innerHTML = (data.rows||[]).map(r => `
+      // KPIs
+      document.getElementById('pane').style.display = 'block';
+      document.getElementById('kUsers').textContent = data.totalUsers ?? 0;
+      document.getElementById('kViews').textContent = data.totalViews ?? 0;
+
+      // Ranking
+      document.getElementById('rankCard').style.display = 'block';
+      const tbody = document.querySelector('#rank tbody');
+      tbody.innerHTML = (data.ranking || []).map((r, i) => `
         <tr>
-          <td>${r.user_email}</td>
-          <td>${r.video_title || r.video_id}</td>
-          <td>${Math.round(r.seconds||0)}</td>
-          <td>${r.last_seen ? new Date(r.last_seen).toLocaleString() : '-'}</td>
+          <td>${i+1}</td>
+          <td>${r.email}</td>
+          <td>${r.completed}</td>
+          <td>${r.videos.join(", ")}</td>
         </tr>
       `).join('');
     }
+
     main();
   </script>
 </body>
