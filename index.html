@@ -26,13 +26,25 @@
     .user{font-size:12px;opacity:.85}
     .banner{background:#1f2937;border:1px solid #374151;border-radius:12px;padding:10px;margin:8px 0;display:none}
   </style>
+
+  <!-- Força os botões de login/logout ficarem brancos -->
+  <style>
+    /* força branco nos botões de login/logout */
+    #btnLogin, #btnLogout {
+      background:#fff !important;
+      color:#111 !important;
+      border:1px solid #e5e7eb !important;
+      border-radius:12px !important;
+    }
+    #btnLogin:hover, #btnLogout:hover { background:#f1f5f9 !important; }
+  </style>
 </head>
 <body>
   <div class="wrap">
     <div class="header">
       <h1>Universidade HS — Aulas</h1>
       <div>
-        <a id="btnDash" class="btn hide" href="/dashboard.html" title="Ver dashboard">📊 Dashboard</a>
+        <a class="btn" href="/dashboard.html" title="Ver dashboard">📊 Dashboard</a>
         <span id="who" class="user"></span>
         <button id="btnLogin" class="btn">Entrar com Google</button>
         <button id="btnLogout" class="btn hide">Sair</button>
@@ -54,14 +66,50 @@
 
   <!-- Netlify Identity -->
   <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+  <script>
+    (function () {
+      const IDENTITY_URL = `${location.origin}/.netlify/identity`;
+      const ua = navigator.userAgent || '';
+      const inApp = /(FBAN|FBAV|Instagram|WhatsApp|Line|Messenger|Snapchat|Twitter)/i.test(ua);
+      if (inApp) document.getElementById('inapp').style.display = 'block';
 
-  <!-- Força catálogo por JSON primeiro (depois pode trocar para 'supabase') -->
+      function setUI(user) {
+        const who = document.getElementById('who');
+        const btnLogin = document.getElementById('btnLogin');
+        const btnLogout = document.getElementById('btnLogout');
+        if (user) {
+          who.textContent = user.email || '';
+          btnLogin.classList.add('hide');
+          btnLogout.classList.remove('hide');
+        } else {
+          who.textContent = '';
+          btnLogout.classList.add('hide');
+          btnLogin.classList.remove('hide');
+        }
+      }
+
+      function initIdentity() {
+        try { window.netlifyIdentity?.init({ APIUrl: IDENTITY_URL }); } catch(e) {}
+        const id = window.netlifyIdentity;
+        if (!id) return;
+
+        setUI(id.currentUser && id.currentUser());
+        id.on && id.on('init', setUI);
+        id.on && id.on('login', user => { setUI(user); id.close && id.close(); });
+        id.on && id.on('logout', () => setUI(null));
+
+        document.getElementById('btnLogin')?.addEventListener('click', () => id.open('login'));
+        document.getElementById('btnLogout')?.addEventListener('click', () => id.logout());
+      }
+
+      if (document.readyState === 'complete') initIdentity();
+      else window.addEventListener('load', initIdentity);
+    })();
+  </script>
+
+  <!-- Seu app -->
   <script src="/config.js"></script>
-
-  <!-- App -->
   <script src="/app.js"></script>
-
-  <!-- YouTube Iframe API -->
   <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 </html>
