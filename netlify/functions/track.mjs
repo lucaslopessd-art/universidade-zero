@@ -1,44 +1,60 @@
 // netlify/functions/track.mjs
-import { getStore } from "@netlify/blobs";
+import { getStore } from '@netlify/blobs';
 
-export default async (req) => {
+export default async (req, context) => {
   try {
-    const body = await req.json().catch(() => ({}));
+    if (req.method !== 'POST') {
+      return new Response('Method not allowed', { status: 405 });
+    }
 
-    const email =
-      (body.email || body.user?.email || body.who?.email || "").toLowerCase();
-    const videoId = body.videoId || body.id || body.video_id;
-    const title = body.title || body.videoTitle || body.name || "";
-    const pct = Number(body.pct ?? body.progress ?? 100);
+    const userEmail =
+      context.clientContext?.user?.email?.toLowerCase() ||
+      req.headers.get('x-user-email')?.toLowerCase();
 
-    if (!email || !videoId) {
-      return new Response(JSON.stringify({ ok: false, error: "missing email/videoId" }), {
-        status: 400,
-        headers: { "content-type": "application/json" }
+    if (!userEmail) {
+      return new Response(JSON.stringify({ error: 'no_user' }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
       });
     }
 
-    const ts = Date.now();
-    const store = getStore("progress");
+    const body = await req.json().catch(() => ({}));
+    const { videoId, title, seconds = 0, done = false } = body;
+    if (!videoId) {
+      return new Response(JSON.stringify({ error: 'missing_videoId' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
 
-    // log do evento
-    await store.setJSON(`ev:${ts}:${email}:${videoId}`, { ts, email, videoId, title, pct });
+    const store = getStore('progress');
 
-    // marca como concluído se >= 95%
-    if (pct >= 95) {
-      const key = `done:${email}`;
-      const done = (await store.getJSON(key)) || {};
-      done[videoId] = { ts, title };
-      await store.setJSON(key, done);
+    // 1) Registro de progresso por usuário+vídeo (opcional, útil pra histórico)
+    const viewKey = `view:${userEmail}:${videoId}`;
+    const current = (await store.get(viewKey, { type: 'json' })) || {};
+    const newData = {
+      video_id: videoId,
+      video_title: title || current.video_title || '',
+      seconds: Math.max(Number(seconds) || 0, Number(current.seconds) || 0),
+      last_seen: Date.now(),
+    };
+    await store.set(viewKey, newData, { type: 'json' });
+
+    // 2) Mapa de concluídos do usuário
+    if (done) {
+      const doneKey = `done:${userEmail}`;
+      const doneMap = (await store.get(doneKey, { type: 'json' })) || {};
+      doneMap[videoId] = true;
+      await store.set(doneKey, doneMap, { type: 'json' });
     }
 
     return new Response(JSON.stringify({ ok: true }), {
-      headers: { "content-type": "application/json" }
+      headers: { 'content-type': 'application/json' },
     });
   } catch (e) {
-    return new Response(JSON.stringify({ ok: false, error: String(e) }), {
+    return new Response(JSON.stringify({ error: String(e) }), {
       status: 500,
-      headers: { "content-type": "application/json" }
+      headers: { 'content-type': 'application/json' },
     });
   }
 };
