@@ -1,27 +1,14 @@
 // netlify/functions/dashboard.mjs
 import { getStore } from "@netlify/blobs";
-
-const FALLBACK_ADMIN = "lucaslopessd@gmail.com";
-const ADMINS = (process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || FALLBACK_ADMIN)
-  .toLowerCase()
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+import { requireAdmin } from "./_auth.mjs";
 
 export default async (req, context) => {
+  // Garante que recebeu o token do Netlify Identity e que é admin
+  const [user, error] = requireAdmin(context);
+  if (error) return error;
+
   try {
-    const authedEmail =
-      context.clientContext?.user?.email?.toLowerCase() ||
-      req.headers.get("x-user-email")?.toLowerCase() ||
-      "";
-
-    if (!ADMINS.includes(authedEmail)) {
-      return new Response(JSON.stringify({ error: "not_admin" }), {
-        status: 403,
-        headers: { "content-type": "application/json" }
-      });
-    }
-
+    // Lemos o progresso salvo no Netlify Blobs (chaves "done:{email}")
     const store = getStore("progress");
 
     const users = {};
@@ -41,15 +28,18 @@ export default async (req, context) => {
 
     const totalUsers = Object.keys(users).length;
     const totalViews = Object.values(users).reduce((sum, u) => sum + u.completed, 0);
-    const ranking = Object.values(users).sort((a, b) => b.completed - a.completed).slice(0, 20);
+    const ranking = Object.values(users)
+      .sort((a, b) => b.completed - a.completed)
+      .slice(0, 50);
 
-    return new Response(JSON.stringify({ totalUsers, totalViews, ranking, users }), {
-      headers: { "content-type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({ ok: true, totalUsers, totalViews, ranking, users }),
+      { headers: { "content-type": "application/json" } }
+    );
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), {
       status: 500,
-      headers: { "content-type": "application/json" }
+      headers: { "content-type": "application/json" },
     });
   }
 };
