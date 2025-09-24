@@ -1,0 +1,24 @@
+/* Botão base (se já existir algo semelhante, pode apenas somar a variante .btn--white) */
+.btn {
+  display:inline-flex;
+  align-items:center;
+  gap:.5rem;
+  padding:10px 14px;
+  border-radius:12px;
+  border:1px solid #374151;
+  background:#111827;
+  color:#e5e7eb;
+  text-decoration:none;
+  cursor:pointer;
+}
+
+/* Variante branca para contraste no fundo escuro */
+.btn--white {
+  background:#ffffff;
+  color:#111827;
+  border-color:#ffffff;
+}
+.btn--white:hover { filter:brightness(0.95); }
+
+/* Utilitário pra esconder/mostrar */
+.hide { display:none; }
